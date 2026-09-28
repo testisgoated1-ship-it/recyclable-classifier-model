@@ -1,3 +1,3 @@
-Publish existing trained model. Do not train.
-1790046128659
-DEPLOY_RETRY=2
+Publish verified September 21 trained model. Do not train.
+1790046128660
+DEPLOY_RETRY=3
