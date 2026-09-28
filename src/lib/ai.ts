@@ -25,19 +25,23 @@ const MODEL_BASE_URL = `${import.meta.env.BASE_URL}recycle-model.onnx`
 const MODEL_VERSION_URL = `${import.meta.env.BASE_URL}recycle-model-version.json`
 const CLASS_MAP_URL = `${import.meta.env.BASE_URL}recycle-class-map.json`
 
+function publicAssetUrl(path: string) {
+  return new URL(path, document.baseURI).toString()
+}
+
 let sessionPromise: Promise<ort.InferenceSession> | null = null
 let classMapPromise: Promise<ClassMap> | null = null
 let modelVersionPromise: Promise<ModelVersion | null> | null = null
 
 function configureOrt() {
-  ort.env.wasm.wasmPaths = `${import.meta.env.BASE_URL}ort/`
+  ort.env.wasm.wasmPaths = publicAssetUrl(`${import.meta.env.BASE_URL}ort/`)
   ort.env.wasm.numThreads = 1
   ort.env.wasm.simd = true
 }
 
 async function getModelVersion() {
   if (!modelVersionPromise) {
-    modelVersionPromise = fetch(MODEL_VERSION_URL, { cache: "no-store" })
+    modelVersionPromise = fetch(publicAssetUrl(MODEL_VERSION_URL), { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) return null
         return response.json() as Promise<ModelVersion>
@@ -52,10 +56,23 @@ async function getSession() {
     configureOrt()
     sessionPromise = (async () => {
       const version = await getModelVersion()
-      const modelUrl = version?.sha256
-        ? `${MODEL_BASE_URL}?v=${encodeURIComponent(version.sha256)}`
-        : MODEL_BASE_URL
-      return ort.InferenceSession.create(modelUrl, {
+      const suffix = version?.sha256
+        ? `?v=${encodeURIComponent(version.sha256)}`
+        : ""
+      const response = await fetch(publicAssetUrl(MODEL_BASE_URL) + suffix, {
+        cache: "no-store",
+      })
+
+      if (!response.ok) {
+        throw new Error(`Unable to load classifier model (HTTP ${response.status})`)
+      }
+
+      const modelBytes = new Uint8Array(await response.arrayBuffer())
+      if (modelBytes.length < 1_000_000) {
+        throw new Error("Classifier model download is unexpectedly small")
+      }
+
+      return ort.InferenceSession.create(modelBytes, {
         executionProviders: ["wasm"],
         graphOptimizationLevel: "all",
       })
@@ -66,7 +83,7 @@ async function getSession() {
 
 async function getClassMap() {
   if (!classMapPromise) {
-    classMapPromise = fetch(CLASS_MAP_URL, { cache: "no-store" }).then(async (response) => {
+    classMapPromise = fetch(publicAssetUrl(CLASS_MAP_URL), { cache: "no-store" }).then(async (response) => {
       if (!response.ok) throw new Error("Unable to load model class map")
       return response.json() as Promise<ClassMap>
     })
@@ -91,7 +108,6 @@ async function imageToTensor(dataUrl: string) {
   const context = canvas.getContext("2d", { willReadFrequently: true })
   if (!context) throw new Error("Canvas is unavailable")
 
-  // Match the training/evaluation pipeline exactly: Resize((224, 224)).
   context.drawImage(image, 0, 0, 224, 224)
   const { data } = context.getImageData(0, 0, 224, 224)
   const tensorData = new Float32Array(3 * 224 * 224)
