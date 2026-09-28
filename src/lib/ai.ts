@@ -19,14 +19,14 @@ type ClassMap = {
   non_recyclable_classes: string[]
 }
 
-const MODEL_URL = "/recycle-model.onnx"
-const CLASS_MAP_URL = "/recycle-class-map.json"
+const MODEL_URL = `${import.meta.env.BASE_URL}recycle-model.onnx`
+const CLASS_MAP_URL = `${import.meta.env.BASE_URL}recycle-class-map.json`
 
 let sessionPromise: Promise<ort.InferenceSession> | null = null
 let classMapPromise: Promise<ClassMap> | null = null
 
 function configureOrt() {
-  ort.env.wasm.wasmPaths = "./ort/"
+  ort.env.wasm.wasmPaths = `${import.meta.env.BASE_URL}ort/`
   ort.env.wasm.numThreads = 1
   ort.env.wasm.simd = true
 }
@@ -69,8 +69,6 @@ async function imageToTensor(dataUrl: string) {
   const context = canvas.getContext("2d", { willReadFrequently: true })
   if (!context) throw new Error("Canvas is unavailable")
 
-  // Match the evaluation preprocessing used during training:
-  // resize to 224, center crop, RGB tensor, ImageNet normalization.
   const scale = Math.max(224 / image.naturalWidth, 224 / image.naturalHeight)
   const width = image.naturalWidth * scale
   const height = image.naturalHeight * scale
@@ -152,8 +150,12 @@ export async function checkRecyclability(imageBase64: string): Promise<Recyclabi
   const input = await imageToTensor(imageBase64)
   const inputName = session.inputNames[0]
   const outputName = session.outputNames[0]
+  if (!inputName || !outputName) throw new Error("Model input/output is unavailable")
+
   const outputs = await session.run({ [inputName]: input })
   const output = outputs[outputName]
+  if (!output) throw new Error("Model output is unavailable")
+
   const logits = output.data as Float32Array
   const probabilities = softmax(logits)
   const classIndex = probabilities.indexOf(Math.max(...probabilities))
