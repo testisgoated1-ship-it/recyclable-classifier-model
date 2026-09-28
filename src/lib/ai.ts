@@ -19,11 +19,15 @@ type ClassMap = {
   non_recyclable_classes: string[]
 }
 
-const MODEL_URL = `${import.meta.env.BASE_URL}recycle-model.onnx`
+type ModelVersion = { sha256: string }
+
+const MODEL_BASE_URL = `${import.meta.env.BASE_URL}recycle-model.onnx`
+const MODEL_VERSION_URL = `${import.meta.env.BASE_URL}recycle-model-version.json`
 const CLASS_MAP_URL = `${import.meta.env.BASE_URL}recycle-class-map.json`
 
 let sessionPromise: Promise<ort.InferenceSession> | null = null
 let classMapPromise: Promise<ClassMap> | null = null
+let modelVersionPromise: Promise<ModelVersion | null> | null = null
 
 function configureOrt() {
   ort.env.wasm.wasmPaths = `${import.meta.env.BASE_URL}ort/`
@@ -31,20 +35,38 @@ function configureOrt() {
   ort.env.wasm.simd = true
 }
 
+async function getModelVersion() {
+  if (!modelVersionPromise) {
+    modelVersionPromise = fetch(MODEL_VERSION_URL, { cache: "no-store" })
+      .then(async (response) => {
+        if (!response.ok) return null
+        return response.json() as Promise<ModelVersion>
+      })
+      .catch(() => null)
+  }
+  return modelVersionPromise
+}
+
 async function getSession() {
   if (!sessionPromise) {
     configureOrt()
-    sessionPromise = ort.InferenceSession.create(MODEL_URL, {
-      executionProviders: ["wasm"],
-      graphOptimizationLevel: "all",
-    })
+    sessionPromise = (async () => {
+      const version = await getModelVersion()
+      const modelUrl = version?.sha256
+        ? `${MODEL_BASE_URL}?v=${encodeURIComponent(version.sha256)}`
+        : MODEL_BASE_URL
+      return ort.InferenceSession.create(modelUrl, {
+        executionProviders: ["wasm"],
+        graphOptimizationLevel: "all",
+      })
+    })()
   }
   return sessionPromise
 }
 
 async function getClassMap() {
   if (!classMapPromise) {
-    classMapPromise = fetch(CLASS_MAP_URL).then(async (response) => {
+    classMapPromise = fetch(CLASS_MAP_URL, { cache: "no-store" }).then(async (response) => {
       if (!response.ok) throw new Error("Unable to load model class map")
       return response.json() as Promise<ClassMap>
     })
@@ -69,13 +91,8 @@ async function imageToTensor(dataUrl: string) {
   const context = canvas.getContext("2d", { willReadFrequently: true })
   if (!context) throw new Error("Canvas is unavailable")
 
-  const scale = Math.max(224 / image.naturalWidth, 224 / image.naturalHeight)
-  const width = image.naturalWidth * scale
-  const height = image.naturalHeight * scale
-  const x = (224 - width) / 2
-  const y = (224 - height) / 2
-
-  context.drawImage(image, x, y, width, height)
+  // Match the training/evaluation pipeline exactly: Resize((224, 224)).
+  context.drawImage(image, 0, 0, 224, 224)
   const { data } = context.getImageData(0, 0, 224, 224)
   const tensorData = new Float32Array(3 * 224 * 224)
   const mean = [0.485, 0.456, 0.406]
@@ -99,10 +116,7 @@ function softmax(values: Float32Array | number[]) {
 }
 
 function formatMaterial(className: string) {
-  return className
-    .split("_")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ")
+  return className.split("_").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ")
 }
 
 function disposalInstructions(className: string, recyclable: boolean) {
@@ -115,7 +129,6 @@ function disposalInstructions(className: string, recyclable: boolean) {
     }
     return instructions[className] ?? "This material is not classified as recyclable by the model. Check your local waste guidelines for specialized disposal options."
   }
-
   const instructions: Record<string, string> = {
     cardboard: "Flatten cardboard and keep it clean and dry. Place it in your paper or cardboard recycling stream according to local guidelines.",
     glass: "Empty and rinse the glass container. Place it in your local glass recycling stream if accepted, and check whether lids should be separated.",
@@ -126,22 +139,14 @@ function disposalInstructions(className: string, recyclable: boolean) {
   return instructions[className] ?? "Check your local recycling guidelines for the correct recycling stream."
 }
 
-export async function classifyProblem(
-  description: string,
-  imageBase64?: string
-): Promise<ClassifyProblemResult> {
+export async function classifyProblem(description: string, imageBase64?: string): Promise<ClassifyProblemResult> {
   void imageBase64
   const lower = description.toLowerCase()
-  if (lower.includes("dump") || lower.includes("trash") || lower.includes("garbage"))
-    return { category: "illegal_dumping", summary: "Illegal waste dumping detected. This requires prompt municipal attention.", severity: "high" }
-  if (lower.includes("pollut") || lower.includes("chemical") || lower.includes("oil"))
-    return { category: "pollution", summary: "Environmental pollution identified. May pose health risks to surrounding ecosystem.", severity: "high" }
-  if (lower.includes("hazard") || lower.includes("toxic") || lower.includes("battery"))
-    return { category: "hazardous_waste", summary: "Hazardous materials detected. Requires specialized disposal team.", severity: "high" }
-  if (lower.includes("graffiti") || lower.includes("vandal") || lower.includes("spray"))
-    return { category: "graffiti", summary: "Vandalism/graffiti identified. Recommend reporting to local authorities.", severity: "low" }
-  if (lower.includes("litter") || lower.includes("bottle") || lower.includes("can"))
-    return { category: "litter", summary: "General littering observed. Community cleanup recommended.", severity: "low" }
+  if (lower.includes("dump") || lower.includes("trash") || lower.includes("garbage")) return { category: "illegal_dumping", summary: "Illegal waste dumping detected. This requires prompt municipal attention.", severity: "high" }
+  if (lower.includes("pollut") || lower.includes("chemical") || lower.includes("oil")) return { category: "pollution", summary: "Environmental pollution identified. May pose health risks to surrounding ecosystem.", severity: "high" }
+  if (lower.includes("hazard") || lower.includes("toxic") || lower.includes("battery")) return { category: "hazardous_waste", summary: "Hazardous materials detected. Requires specialized disposal team.", severity: "high" }
+  if (lower.includes("graffiti") || lower.includes("vandal") || lower.includes("spray")) return { category: "graffiti", summary: "Vandalism/graffiti identified. Recommend reporting to local authorities.", severity: "low" }
+  if (lower.includes("litter") || lower.includes("bottle") || lower.includes("can")) return { category: "litter", summary: "General littering observed. Community cleanup recommended.", severity: "low" }
   return { category: "other", summary: "Environmental issue detected. Municipal review recommended.", severity: "medium" }
 }
 
@@ -157,19 +162,18 @@ export async function checkRecyclability(imageBase64: string): Promise<Recyclabi
   if (!output) throw new Error("Model output is unavailable")
 
   const logits = output.data as Float32Array
+  if (logits.length !== classMap.classes.length) throw new Error("Model output does not match class map")
+
   const probabilities = softmax(logits)
   const classIndex = probabilities.indexOf(Math.max(...probabilities))
   const material = classMap.classes[classIndex]
-
   if (!material) throw new Error("Model returned an unknown class")
 
   const recyclable = classMap.recyclable_classes.includes(material)
-  const confidence = probabilities[classIndex]
-
   return {
     recyclable,
     material: formatMaterial(material),
     instructions: disposalInstructions(material, recyclable),
-    confidence,
+    confidence: probabilities[classIndex],
   }
 }
