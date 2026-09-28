@@ -26,20 +26,23 @@ jobs:
           python -m pip install --upgrade pip
           pip install torch torchvision onnx
 
-      - name: Download known-good trained model
+      - name: Download the verified September 21 trained model
         uses: actions/download-artifact@v4
         with:
           name: waste-recycling-model
           path: recycle-model-training/output
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
-          run-id: 35672738858
+          run-id: 35668468237
 
       - name: Verify trained model artifact
         run: |
           set -euo pipefail
           test -s recycle-model-training/output/waste_recycling_resnet18.pt
-          echo "Using existing trained model artifact. No training step is present."
+          ACTUAL_SHA=$(sha256sum recycle-model-training/output/waste_recycling_resnet18.pt | cut -d' ' -f1)
+          EXPECTED_SHA=79131ed33fe65508514f80ae318af9b3b3803ade772538b63e9ae9ba84bf4ec8
+          test "$ACTUAL_SHA" = "$EXPECTED_SHA"
+          echo "Using the verified trained model artifact: $ACTUAL_SHA"
 
       - name: Export and validate ONNX model
         run: python recycle-model-training/export_onnx.py
@@ -55,5 +58,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add public/recycle-model.onnx public/recycle-class-map.json
-          git diff --cached --quiet || git commit -m "Publish recycle classifier model [skip ci]"
+          git diff --cached --quiet || git commit -m "Publish verified recycle classifier model [skip ci]"
           git push
