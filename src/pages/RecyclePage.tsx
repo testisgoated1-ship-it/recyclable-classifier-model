@@ -3,7 +3,7 @@ import { Camera, Loader2, Recycle, CheckCircle, XCircle, RefreshCw, Info } from 
 
 import { checkRecyclability } from "@/lib/ai"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Progress } from "@/components/ui/progress"
@@ -71,7 +71,7 @@ export default function RecyclePage() {
           <div className="flex gap-3">
             <Info className="size-5 text-green-700 dark:text-green-400 shrink-0 mt-0.5" />
             <p className="text-sm text-green-800 dark:text-green-300">
-              Take or upload a photo of any trash item and our AI will tell you if it's recyclable and how to dispose of it properly.
+              Take or upload a photo of any trash item and our AI will tell you if it's recyclable.
             </p>
           </div>
         </div>
@@ -141,7 +141,7 @@ export default function RecyclePage() {
                 <Loader2 className="size-5 text-green-600 dark:text-green-400 animate-spin shrink-0" />
                 <div>
                   <p className="text-sm font-medium">Analyzing item…</p>
-                  <p className="text-xs text-muted-foreground">Identifying material type and recycling guidelines</p>
+                  <p className="text-xs text-muted-foreground">Checking recyclability</p>
                 </div>
               </div>
               <Progress value={65} className="h-1" />
@@ -160,47 +160,19 @@ export default function RecyclePage() {
         {/* Result */}
         {state === "result" && result && (
           <div className="space-y-4">
-            {/* Main verdict */}
             <Card className={`border-2 ${result.recyclable ? "border-green-400 dark:border-green-600" : "border-destructive/50"}`}>
               <CardContent className="p-5">
-                <div className="flex items-center gap-4">
+                <div className="flex items-center justify-center gap-4">
                   <div className={`flex size-14 items-center justify-center rounded-full ${result.recyclable ? "bg-green-100 dark:bg-green-900/30" : "bg-red-100 dark:bg-red-900/30"}`}>
                     {result.recyclable
                       ? <CheckCircle className="size-8 text-green-600 dark:text-green-400" />
                       : <XCircle className="size-8 text-destructive" />
                     }
                   </div>
-                  <div>
-                    <p className={`text-xl font-bold ${result.recyclable ? "text-green-700 dark:text-green-400" : "text-destructive"}`}>
-                      {result.recyclable ? "Recyclable!" : "Not Recyclable"}
-                    </p>
-                    <p className="text-sm text-muted-foreground mt-0.5">{result.material}</p>
-                  </div>
+                  <p className={`text-xl font-bold ${result.recyclable ? "text-green-700 dark:text-green-400" : "text-destructive"}`}>
+                    {result.recyclable ? "Recyclable" : "Not Recyclable"}
+                  </p>
                 </div>
-              </CardContent>
-            </Card>
-
-            {/* Confidence */}
-            <Card>
-              <CardContent className="p-4 space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">AI Confidence</span>
-                  <span className="font-medium">{Math.round(result.confidence * 100)}%</span>
-                </div>
-                <Progress value={result.confidence * 100} className="h-2" />
-              </CardContent>
-            </Card>
-
-            {/* Instructions */}
-            <Card>
-              <CardHeader className="pb-2 pt-4 px-4">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Info className="size-4 text-primary" />
-                  Disposal Instructions
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="px-4 pb-4">
-                <p className="text-sm text-muted-foreground leading-relaxed">{result.instructions}</p>
               </CardContent>
             </Card>
 
@@ -215,11 +187,6 @@ export default function RecyclePage() {
                 New Photo
               </Button>
             </div>
-
-            {/* Disclaimer */}
-            <p className="text-xs text-center text-muted-foreground px-2">
-              Results are AI-generated estimates. Always check your local recycling guidelines.
-            </p>
           </div>
         )}
 
